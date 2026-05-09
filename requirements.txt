@@ -1,0 +1,12 @@
+playwright==1.42.0
+google-api-python-client==2.122.0
+pandas==2.2.1
+
+pymorphy2==0.9.1
+
+scikit-learn==1.4.1.post1
+networkx==3.2.1
+
+streamlit==1.32.2
+
+python-dotenv==1.0.1
