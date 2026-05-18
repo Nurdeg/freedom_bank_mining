@@ -1,66 +1,76 @@
 import pandas as pd
-import re
+import glob
 import os
-import pymorphy3
-from glob import glob
+import re
+import logging
 
-morph = pymorphy3.MorphAnalyzer()
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger('Cleaner')
 
-def custom_regex_cleaner(text):
-    if not isinstance(text, str): return ""
-    
-    # 1. Ссылки
-    text = re.sub(r'https?://\S+|www\.\S+', ' [URL] ', text)
-    # 2. HTML сущности (&nbsp; и т.д.)
-    text = re.sub(r'&[a-z0-9]+;', ' ', text)
-    # 3. Хештеги и упоминания
-    text = re.sub(r'[@#]\w+', ' ', text)
-    # 4. Эмодзи и спецсимволы (оставляем только буквы, цифры и базовую пунктуацию)
-    text = re.sub(r'[^а-яА-ЯёЁәіңғүұқөһa-zA-Z0-9\s.!?]', ' ', text)
-    # 5. Дубли знаков препинания
-    text = re.sub(r'([!?.]){2,}', r'\1', text)
-    # 6. Лишние пробелы
+def clean_text(text):
+    if not isinstance(text, str):
+        return ""
+    text = text.lower()
+    text = re.sub(r'https?://\S+|www\.\S+', '', text)
+    text = re.sub(r'[^а-яа-ёa-z0-9\s.,!?]', '', text)
     text = re.sub(r'\s+', ' ', text).strip()
+    return text
+
+def run_preprocessing():
+    raw_folder = 'data/raw'
+    processed_folder = 'data/processed'
+    os.makedirs(processed_folder, exist_ok=True)
     
-    return text.lower()
-
-def lemmatize(text):
-    # Разрезаем на слова, приводим к начальной форме (для RU)
-    words = text.split()
-    res = []
-    for w in words:
-        # Для казахских слов pymorphy не сработает, оставим их как есть
-        # (в идеале тут нужен казахский стоп-словарь)
-        p = morph.parse(w)[0]
-        res.append(p.normal_form)
-    return " ".join(res)
-
-def process_all_data():
-    # Собираем все файлы из raw
-    raw_files = glob('data/raw/*.csv')
-    all_dfs = []
-
-    for file in raw_files:
-        temp_df = pd.read_csv(file)
-        all_dfs.append(temp_df)
-
-    main_df = pd.concat(all_dfs, ignore_index=True)
+    csv_files = glob.glob(os.path.join(raw_folder, '*.csv'))
     
-    # Применяем очистку
-    print("Начинаю очистку текста...")
-    main_df['clean_text'] = main_df['text'].apply(custom_regex_cleaner)
+    if not csv_files:
+        logger.error("не найдено ни одного CSV файла!")
+        return
+        
+    logger.info(f"Найдено файлов для объединения: {len(csv_files)}")
     
-    # Применяем лемматизацию
-    print("Применяю лемматизацию...")
-    main_df['lemmatized_text'] = main_df['clean_text'].apply(lemmatize)
+    all_data = []
+    
+    for file in csv_files:
+        try:
+            df = pd.read_csv(file)
+            logger.info(f"Чтение файла {os.path.basename(file)}: {len(df)} строк.")
+            
+            required_cols = ['source', 'text']
+            if not all(col in df.columns for col in required_cols):
+                logger.warning(f"⚠️ Файл {file} пропущен: нет колонок 'source' или 'text'")
+                continue
+                
+            if 'date' not in df.columns:
+                df['date'] = pd.Timestamp.now().strftime('%Y-%m-%d')
+                
+         
+            df['lemmatized_text'] = df['text']
+                
+            df_standard = df[['source', 'date', 'text', 'lemmatized_text']].copy()
+            all_data.append(df_standard)
 
-    # Создаем сравнительную таблицу для отчета (10 примеров)
-    report_sample = main_df[['text', 'lemmatized_text']].head(10)
-    report_sample.to_csv('data/processed/comparison_table.csv', index=False, encoding='utf-8-sig')
-
-    # Сохраняем финальный датасет
-    main_df.to_csv('data/processed/final_cleaned_data.csv', index=False, encoding='utf-8-sig')
-    print(f"Всего обработано записей: {len(main_df)}")
+        except Exception as e:
+            logger.error(f"Ошибка при обработке файла {file}: {e}")
+            
+    if not all_data:
+        logger.error("Нет данных для объединения.")
+        return
+        
+    combined_df = pd.concat(all_data, ignore_index=True)
+    logger.info(f"Объединено всего строк: {len(combined_df)}")
+    
+    logger.info("Запуск очистки текстов...")
+    combined_df['text'] = combined_df['text'].apply(clean_text)
+    
+    combined_df = combined_df[combined_df['text'].str.strip() != ""]
+    
+    combined_df.drop_duplicates(subset=['text'], inplace=True)
+    logger.info(f"После удаления дубликатов осталось: {len(combined_df)} строк.")
+    
+    output_path = os.path.join(processed_folder, 'final_cleaned_data.csv')
+    combined_df.to_csv(output_path, index=False, encoding='utf-8-sig')
+    logger.info(f"Результат сохранен в {output_path}")
 
 if __name__ == "__main__":
-    process_all_data()
+    run_preprocessing()
