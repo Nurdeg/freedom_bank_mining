@@ -6,12 +6,10 @@ import plotly.express as px
 import json
 import time
 
-# ==========================================
-# ⚙️ НАСТРОЙКИ СТРАНИЦЫ
-# ==========================================
+# настройка глав страницы
 st.set_page_config(page_title="Freedom Bank: Live Analytics", layout="wide")
 
-st.title("🔴 Система мониторинга инфополя [LIVE]")
+st.title("Система мониторинга инфополя [LIVE]")
 st.markdown("Потоковый анализ данных, детекция аномалий и интерактивный поиск.")
 st.divider()
 
@@ -29,12 +27,10 @@ if 'sentiment' not in df.columns:
     st.error("Колонка 'sentiment' не найдена! Запустите sentiment_scorer.py.")
     st.stop()
 
-# ==========================================
-# 🕹️ РЕЖИМ РАБОТЫ И СИМУЛЯЦИЯ
-# ==========================================
-st.sidebar.header("🕹️ Управление режимом")
+#симуляция потока 
+st.sidebar.header(" Управление режимом")
 
-# Чекбокс переключения режимов
+# вкл\выкл режимов
 run_simulation = st.sidebar.checkbox("Включить симуляцию потока (Real-time)", value=False)
 
 if 'stream_index' not in st.session_state:
@@ -42,33 +38,27 @@ if 'stream_index' not in st.session_state:
 if 'is_streaming' not in st.session_state:
     st.session_state.is_streaming = False
 
-# Если симуляция активна, работаем с увеличивающимся срезом данных
 if run_simulation:
-    if st.sidebar.button("▶️ Старт / ⏸ Пауза потока"):
+    if st.sidebar.button("▶Старт/⏸ Пауза потока"):
         st.session_state.is_streaming = not st.session_state.is_streaming
     
-    st.sidebar.write(f"**Статус потока:** {'🟢 LIVE' if st.session_state.is_streaming else '⏸ ПАУЗА'}")
+    st.sidebar.write(f"**Статус потока:** {'LIVE' if st.session_state.is_streaming else '⏸ ПАУЗА'}")
     st.sidebar.progress(min(st.session_state.stream_index / len(df), 1.0))
     
     working_df = df.iloc[:st.session_state.stream_index].copy()
 else:
-    # Если симуляция выключена — сразу отдаем в работу ВСЕ данные без ограничений
     st.session_state.is_streaming = False
     working_df = df.copy()
 
-# ==========================================
-# 🎛 ИНТЕРАКТИВНЫЕ ФИЛЬТРЫ
-# ==========================================
+# лайф фильтры
 st.sidebar.divider()
 st.sidebar.header("Интерактивные фильтры")
 
 sources = ["Все"] + list(df['source'].unique())
 selected_source = st.sidebar.selectbox("Источник данных:", sources)
-search_query = st.sidebar.text_input("🔍 Поиск по тексту:")
+search_query = st.sidebar.text_input("Поиск по тексту:")
 
-# ==========================================
-# 🧠 ЛОГИКА ДЕТЕКЦИИ АНОМАЛИЙ
-# ==========================================
+# код для распознавания аномалий 
 global_neg_ratio = len(df[df['sentiment'] == 'Негативный']) / len(df) if len(df) > 0 else 0
 window_size = min(10, len(working_df))
 recent_window = working_df.tail(window_size)
@@ -76,11 +66,9 @@ recent_neg_count = len(recent_window[recent_window['sentiment'] == 'Негати
 threshold = max(window_size * global_neg_ratio * 1.3, 2)
 
 if run_simulation and window_size >= 5 and recent_neg_count >= threshold:
-    st.error(f"🚨 **АНОМАЛИЯ ОБНАРУЖЕНА!** Резкий всплеск негатива: {recent_neg_count} негативных публикаций в текущем окне.")
+    st.error(f" всплеск негатива: {recent_neg_count} негативных публикаций в текущем окне.")
 
-# ==========================================
-# ✂️ ПРИМЕНЕНИЕ ФИЛЬТРОВ К ДАННЫМ
-# ==========================================
+#фильтрация данных
 filtered_df = working_df.copy()
 
 if selected_source != "Все":
@@ -90,14 +78,12 @@ if search_query:
     filtered_df = filtered_df[filtered_df['text'].str.contains(search_query, case=False, na=False)]
 
 st.sidebar.divider()
-st.sidebar.write("📊 **Статистика дашборда:**")
+st.sidebar.write("**Статистика дашборда:**")
 st.sidebar.write(f"Доступно в выборке: **{len(working_df)} / {len(df)}**")
 st.sidebar.write(f"Отображается после фильтров: **{len(filtered_df)}**")
 
-# ==========================================
-# 📊 ИНТЕРФЕЙС И ВКЛАДКИ
-# ==========================================
-tab1, tab2, tab3 = st.tabs(["📊 Обзор и Тональность", "🕸️ Граф связей", "🔑 Ключевые слова (TF-IDF)"])
+# интерфкйс
+tab1, tab2, tab3 = st.tabs(["Обзор и Тональность", "Граф связей", "Ключевые слова (TF-IDF)"])
 
 with tab1:
     col1, col2 = st.columns([1, 2])
@@ -107,8 +93,8 @@ with tab1:
         if not filtered_df.empty:
             color_map = {'Позитивный': '#00CC96', 'Негативный': '#EF553B', 'Нейтральный': '#636EFA'}
             
-            # Изменение: Передаем filtered_df напрямую и указываем только names='sentiment'.
-            # Plotly Express сам посчитает точное количество строк для каждой категории.
+            
+            # plotly express сам посчитает точное количество стр
             fig = px.pie(
                 filtered_df, 
                 names='sentiment', 
@@ -144,13 +130,11 @@ with tab3:
     st.subheader("Топ ключевых слов (TF-IDF)")
     st.dataframe(keywords, use_container_width=False)
 
-# ==========================================
-# ⏱ ЦИКЛ СИМУЛЯЦИИ ПОТОКА
-# ==========================================
+# flow simulation
 if run_simulation and st.session_state.is_streaming and st.session_state.stream_index < len(df):
     time.sleep(3) 
     st.session_state.stream_index = min(st.session_state.stream_index + 2, len(df))
     st.rerun()
 elif run_simulation and st.session_state.stream_index >= len(df) and st.session_state.is_streaming:
     st.session_state.is_streaming = False
-    st.toast("✅ Симуляция завершена. Все данные обработаны.")
+    st.toast("Симуляция завершена. Все данные обработаны.")
